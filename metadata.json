@@ -1,0 +1,6 @@
+{
+  "name": "Bank Balance Reader",
+  "description": "App đọc thông báo biến động số dư ngân hàng và tự động gửi API lên server backend thời gian thực",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

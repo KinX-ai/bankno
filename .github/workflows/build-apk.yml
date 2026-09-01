@@ -1,0 +1,74 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    tags:
+      - "v*"
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Make Gradlew Executable
+        run: chmod +x ./gradlew
+
+      - name: Setup Keystore & Secrets
+        run: |
+          # Reconstruct debug.keystore if base64 file exists or generate standard debug keystore
+          if [ -f "debug.keystore.base64" ]; then
+            echo "Decoding debug.keystore from base64..."
+            base64 -d debug.keystore.base64 > debug.keystore
+          elif [ ! -f "debug.keystore" ]; then
+            echo "Generating fallback debug keystore..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          fi
+          
+          # Create placeholder .env file if required by Secrets plugin
+          if [ ! -f ".env" ]; then
+            touch .env
+          fi
+
+      - name: Build Debug & Release APK
+        run: ./gradlew assembleRelease assembleDebug --stacktrace
+
+      - name: Locate Generated APKs
+        id: apk_locator
+        run: |
+          mkdir -p apk_output
+          find app/build/outputs/apk/ -name "*.apk" -exec cp {} apk_output/ \;
+          echo "Found APK files:"
+          ls -la apk_output/
+
+      - name: Upload APKs Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BankBalanceReader-APKs
+          path: apk_output/*.apk
+          retention-days: 14
+
+      - name: Create Release (On Tag push)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: apk_output/*.apk
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
