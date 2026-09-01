@@ -387,6 +387,7 @@ fun MainScreen(
                         apiUrl = apiUrl,
                         isTestingApi = isTestingApi,
                         testApiResult = testApiResult,
+                        isPermissionGranted = permissionGranted,
                         context = context
                     )
                 }
@@ -1440,6 +1441,7 @@ fun SettingsTabSection(
     apiUrl: String,
     isTestingApi: Boolean,
     testApiResult: String?,
+    isPermissionGranted: Boolean,
     context: android.content.Context
 ) {
     var customUrlText by remember(apiUrl) { mutableStateOf(apiUrl) }
@@ -1667,7 +1669,7 @@ fun SettingsTabSection(
             }
         }
 
-        // Section 4: System Permissions & Battery Optimization
+        // Section 4: System Permissions & Listener Rebind
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -1685,25 +1687,82 @@ fun SettingsTabSection(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "Quyền Hệ Thống & Chạy Nền",
+                            "Trạng Thái Dịch Vụ & Quyền Hệ Thống",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = Color(0xFF1D1B20)
                         )
                     }
                     Spacer(modifier = Modifier.height(12.dp))
-                    OutlinedButton(
+
+                    // Permission Status Badge
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                if (isPermissionGranted) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
+                                RoundedCornerShape(8.dp)
+                            )
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (isPermissionGranted) Icons.Default.CheckCircle else Icons.Default.Warning,
+                            contentDescription = null,
+                            tint = if (isPermissionGranted) Color(0xFF2E7D32) else Color(0xFFC62828),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = if (isPermissionGranted) "Quyền đọc thông báo: ĐÃ BẬT" else "Quyền đọc thông báo: CHƯA CẤP",
+                                fontWeight = FontWeight.Bold,
+                                color = if (isPermissionGranted) Color(0xFF2E7D32) else Color(0xFFC62828),
+                                fontSize = 13.sp
+                            )
+                            if (!isPermissionGranted) {
+                                Text(
+                                    text = "Bắt buộc phải bật để app nhận được thông báo ngân hàng.",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFC62828)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
                         onClick = {
                             context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                         },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isPermissionGranted) Color(0xFF6750A4) else Color(0xFFB3261E)
+                        ),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Notifications, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Mở Cài Đặt Quyền Đọc Thông Báo")
+                            Text(if (isPermissionGranted) "Cài Đặt Quyền Đọc Thông Báo" else "CẤP QUYỀN ĐỌC THÔNG BÁO NGAY")
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.rebindListenerService(context)
+                            Toast.makeText(context, "Đã khởi động lại kết nối Dịch vụ Lắng nghe!", Toast.LENGTH_SHORT).show()
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Khởi động lại / Kết nối lại dịch vụ")
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedButton(
                         onClick = {
@@ -1722,7 +1781,134 @@ fun SettingsTabSection(
             }
         }
 
-        // Section 5: Troubleshooting Guide Card
+        // Section 5: Live Notification Parser Diagnostic Sandbox
+        item {
+            var sampleTitle by remember { mutableStateOf("Vietcombank") }
+            var sampleBody by remember { mutableStateOf("TK 0123456789 +50,000 VND vao 15:30. ND: Chuyen tien test. SD: 1,500,000 VND") }
+            var testParseResult by remember { mutableStateOf<TransactionEntity?>(null) }
+            var hasTested by remember { mutableStateOf(false) }
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, Color(0xFF6750A4).copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.BugReport,
+                            contentDescription = null,
+                            tint = Color(0xFF6750A4),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "Công Cụ Kiểm Tra Đọc Thử Thông Báo",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color(0xFF1D1B20)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Dán nội dung thông báo ngân hàng thực tế của bạn vào đây để kiểm tra xem hệ thống có nhận diện và bóc tách dữ liệu đúng hay không.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF49454F)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = sampleTitle,
+                        onValueChange = { sampleTitle = it },
+                        label = { Text("Tiêu đề thông báo / Tên ngân hàng") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = sampleBody,
+                        onValueChange = { sampleBody = it },
+                        label = { Text("Nội dung thông báo (Body)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2,
+                        maxLines = 4
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                hasTested = true
+                                testParseResult = viewModel.simulateNotificationParse(sampleTitle, sampleBody, "com.mock.bank")
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Phân Tích Thử", color = Color.White)
+                        }
+
+                        if (testParseResult != null) {
+                            OutlinedButton(
+                                onClick = {
+                                    testParseResult?.let { res ->
+                                        viewModel.triggerMockTransaction(
+                                            bankName = res.bankName,
+                                            amount = res.amount,
+                                            type = res.type,
+                                            account = res.accountNumber,
+                                            balance = res.balance,
+                                            customContent = res.content
+                                        )
+                                        Toast.makeText(context, "Đã gửi thử giao dịch bóc tách được sang API!", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Gửi API Thử")
+                            }
+                        }
+                    }
+
+                    if (hasTested) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        if (testParseResult != null) {
+                            val res = testParseResult!!
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("✓ Nhận diện thành công!", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text("• Ngân hàng: ${res.bankName}", fontSize = 12.sp, color = Color(0xFF1B5E20))
+                                    Text("• Phân loại: ${if (res.type == "IN") "+ Tiền vào (Cộng)" else "- Tiền ra (Trừ)"}", fontSize = 12.sp, color = Color(0xFF1B5E20))
+                                    Text("• Số tiền: ${String.format("%,.0f", res.amount)} VND", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1B5E20))
+                                    Text("• Tài khoản: ${res.accountNumber}", fontSize = 12.sp, color = Color(0xFF1B5E20))
+                                    Text("• Số dư: ${String.format("%,.0f", res.balance)} VND", fontSize = 12.sp, color = Color(0xFF1B5E20))
+                                }
+                            }
+                        } else {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text("✕ Chưa nhận diện được số tiền hoặc biến động", fontWeight = FontWeight.Bold, color = Color(0xFFC62828))
+                                    Text("Vui lòng kiểm tra xem nội dung thông báo có chứa số tiền, số dư hoặc dấu +/- hay không.", fontSize = 12.sp, color = Color(0xFFB71C1C))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Section 6: Troubleshooting Guide Card
         item {
             Card(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
@@ -1743,18 +1929,20 @@ fun SettingsTabSection(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            "Hướng dẫn giữ dịch vụ chạy 24/7 ổn định",
+                            "Hướng dẫn khắc phục khi không nhận được thông báo",
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                             color = Color(0xFFC2410C)
                         )
                     }
                     Text(
-                        "Một số hãng máy (Xiaomi, Oppo, Vivo, Realme, Samsung) thường tự động tắt ứng dụng khi đóng đa nhiệm. Hãy thiết lập:",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF7C2D12)
-                    )
-                    Text(
-                        "• Bật Tự khởi chạy (Auto-start) trong Thông tin ứng dụng.\n• Khóa app trong danh sách Đa nhiệm (Recent Apps).\n• Đặt Tiết kiệm pin thành 'Không giới hạn'.",
+                        "1. Android 13/14+ bị mờ nút cấp quyền (Cài đặt bị hạn chế):\n" +
+                        "   Vào Cài đặt máy > Ứng dụng > Tìm ứng dụng này > Bấm dấu 3 chấm góc trên bên phải > Chọn 'Cho phép cài đặt bị hạn chế' (Allow restricted settings).\n\n" +
+                        "2. Cấp Quyền Đọc Thông Báo:\n" +
+                        "   Vào Cài đặt máy > Quyền truy cập thông báo > Bật công tắc cho ứng dụng này.\n\n" +
+                        "3. Tắt tối ưu hóa pin:\n" +
+                        "   Vào Thông tin ứng dụng > Pin > Chọn 'Không giới hạn' (No restrictions).\n\n" +
+                        "4. Khóa ứng dụng trong Đa nhiệm (Xiaomi, Oppo, Vivo, Samsung):\n" +
+                        "   Mở màn hình đa nhiệm (Recent apps) > Nhấn giữ app > Bấm biểu tượng Ổ Khóa để tránh hệ điều hành tự tắt khi dọn RAM.",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFF7C2D12)
                     )

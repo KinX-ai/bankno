@@ -177,6 +177,32 @@ class MainViewModel(private val repository: TransactionRepository, context: Cont
         }
     }
 
+    fun rebindListenerService(context: Context) {
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+                android.service.notification.NotificationListenerService.requestRebind(
+                    ComponentName(context, com.example.service.BankNotificationListenerService::class.java)
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        
+        try {
+            val keepAliveIntent = android.content.Intent(context, com.example.service.BackgroundKeepAliveReceiver::class.java).apply {
+                action = "android.intent.action.USER_PRESENT"
+            }
+            context.sendBroadcast(keepAliveIntent)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        checkPermission(context)
+    }
+
+    fun simulateNotificationParse(title: String, body: String, packageName: String): TransactionEntity? {
+        return com.example.service.BankNotificationListenerService.parseNotification(title, body, packageName)
+    }
+
     fun retryTransaction(transaction: TransactionEntity) {
         viewModelScope.launch {
             // Set status to pending first for visual feedback

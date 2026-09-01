@@ -167,15 +167,23 @@ class BankNotificationListenerService : NotificationListenerService() {
         val body = if (contentParts.isNotEmpty()) contentParts.joinToString(" | ") else text
         if (body.isEmpty() && effectiveTitle.isEmpty()) return
 
-        // Default monitored_apps_only to true to block non-banking apps from triggering false demo data
+        Log.d("BankNotification", "Received notification from [$packageName] Title: '$effectiveTitle' Body: '$body'")
+
+        // Default monitored_apps_only to true to block non-banking apps from triggering false data
         val monitoredAppsOnly = sharedPref.getBoolean("monitored_apps_only", true)
-        if (monitoredAppsOnly && !isBankingApp(packageName)) {
+        val isBankApp = isBankingApp(packageName)
+        val bankName = detectBankName(packageName, effectiveTitle, body)
+        val isRecognizedBank = bankName != "Bank"
+
+        if (monitoredAppsOnly && !isBankApp && !isRecognizedBank) {
+            Log.d("BankNotification", "Skipped non-banking app: $packageName (Recognized Bank: $bankName)")
             return
         }
 
         // Process transaction
         val transaction = parseNotification(effectiveTitle, body, packageName)
         if (transaction != null) {
+            Log.d("BankNotification", "-> Parsed transaction: ${transaction.bankName} | ${transaction.type} | ${transaction.amount} | TK: ${transaction.accountNumber} | SD: ${transaction.balance}")
             val now = System.currentTimeMillis()
             val dedupeKey = "$packageName|${transaction.bankName}|${transaction.amount}|${transaction.type}|${transaction.accountNumber}|${transaction.balance}"
             
@@ -199,10 +207,14 @@ class BankNotificationListenerService : NotificationListenerService() {
                 // Save locally
                 val id = repository.insert(transaction)
                 val savedTransaction = transaction.copy(id = id.toInt())
+                Log.d("BankNotification", "Saved transaction #$id to database. Now sending to API: $apiUrl")
 
                 // Send to backend API
-                repository.sendTransactionToApi(savedTransaction, apiUrl, deviceId)
+                val success = repository.sendTransactionToApi(savedTransaction, apiUrl, deviceId)
+                Log.d("BankNotification", "API dispatch result for #$id: $success")
             }
+        } else {
+            Log.d("BankNotification", "Notification did not match financial transaction pattern")
         }
     }
 
@@ -240,8 +252,8 @@ class BankNotificationListenerService : NotificationListenerService() {
                 "hdbank", "hdb", "seabank", "eximbank", "shinhan", "kbank", "hsbc", "lpbank",
                 "lienvietpostbank", "kienlongbank", "baovietbank", "bacabank", "namabank", "vietabank",
                 "pvcombank", "wooribank", "uob", "cimb", "publicbank", "vietcapitalbank", "bvb", "ncb",
-                "momo", "mservice", "zalopay", "viettelpay", "viettelmoney", "vnpay", "vnptpay",
-                "shopeepay", "airpay", "payoo"
+                "momo", "mservice", "zalopay", "viettelpay", "viettelmoney", "vtpay", "bplus", "vnpay", "vnptpay",
+                "shopeepay", "airpay", "payoo", "smartbanking", "digibank", "ebank", "banking"
             )
             val lower = packageName.lowercase()
             return knownPackages.any { lower.contains(it) } || isSmsApp(packageName)
@@ -364,9 +376,9 @@ class BankNotificationListenerService : NotificationListenerService() {
                         Regex("""\b(zalopay|ví zalopay|vi zalopay)\b""", RegexOption.IGNORE_CASE).containsMatchIn(combined) -> "ZaloPay"
 
                 // Viettel Money
-                pLower.contains("viettel") ||
+                pLower.contains("viettel") || pLower.contains("bplus") || pLower.contains("vtpay") ||
                         tLower.contains("viettelpay") || tLower.contains("viettel money") ||
-                        Regex("""\b(viettelpay|viettel money|viettelmoney)\b""", RegexOption.IGNORE_CASE).containsMatchIn(combined) -> "Viettel Money"
+                        Regex("""\b(viettelpay|viettel money|viettelmoney|vtpay)\b""", RegexOption.IGNORE_CASE).containsMatchIn(combined) -> "Viettel Money"
 
                 // VNPay
                 pLower.contains("vnpay") ||
@@ -377,6 +389,54 @@ class BankNotificationListenerService : NotificationListenerService() {
                 pLower.contains("shopeepay") || pLower.contains("airpay") ||
                         tLower.contains("shopeepay") ||
                         Regex("""\b(shopeepay|airpay)\b""", RegexOption.IGNORE_CASE).containsMatchIn(combined) -> "ShopeePay"
+
+                // Shinhan Bank
+                pLower.contains("shinhan") || tLower.contains("shinhan") -> "Shinhan Bank"
+
+                // BVBank (Bản Việt)
+                pLower.contains("bvb") || pLower.contains("vietcapital") || tLower.contains("bvbank") || tLower.contains("bản việt") -> "BVBank"
+
+                // Nam A Bank
+                pLower.contains("namabank") || tLower.contains("nam a bank") || tLower.contains("namabank") -> "Nam A Bank"
+
+                // KienlongBank
+                pLower.contains("kienlongbank") || tLower.contains("kienlong") -> "KienlongBank"
+
+                // Bac A Bank
+                pLower.contains("bacabank") || tLower.contains("bac a bank") -> "Bac A Bank"
+
+                // PVcomBank
+                pLower.contains("pvcombank") || tLower.contains("pvcom") -> "PVcomBank"
+
+                // NCB
+                pLower.contains("ncb") || tLower.contains("quoc dan") || tLower.contains("ncb") -> "NCB"
+
+                // VietABank
+                pLower.contains("vietabank") || tLower.contains("vieta") -> "VietABank"
+
+                // BaoViet Bank
+                pLower.contains("baoviet") || tLower.contains("baoviet") -> "BaoViet Bank"
+
+                // Woori Bank
+                pLower.contains("woori") || tLower.contains("woori") -> "Woori Bank"
+
+                // KBank
+                pLower.contains("kbank") || tLower.contains("kasikorn") -> "KBank"
+
+                // HSBC
+                pLower.contains("hsbc") || tLower.contains("hsbc") -> "HSBC"
+
+                // Standard Chartered
+                pLower.contains("sc.com") || tLower.contains("standard chartered") -> "Standard Chartered"
+
+                // UOB
+                pLower.contains("uob") || tLower.contains("uob") -> "UOB"
+
+                // CIMB
+                pLower.contains("cimb") || tLower.contains("cimb") -> "CIMB"
+
+                // Public Bank
+                pLower.contains("publicbank") || tLower.contains("public bank") -> "Public Bank"
 
                 else -> {
                     if (title.isNotEmpty() && title.length < 25 && !isSmsApp(packageName)) {
@@ -436,8 +496,8 @@ class BankNotificationListenerService : NotificationListenerService() {
 
             // --- MULTI-TIER AMOUNT EXTRACTION (Evaluated against fullText = title + body) ---
 
-            // Tier 1: Match signed amounts: e.g., +50,000 VND, -100.000đ, + 50.000, +50,000.00
-            val signedAmountRegex = """([+-])\s*([0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{1,2})?|[0-9]{4,15})\s*(?:vnd|vnđ|đ|d|dong|đồng)?""".toRegex(RegexOption.IGNORE_CASE)
+            // Tier 1: Match signed amounts: e.g., +50,000 VND, -100.000đ, + 50.000, +50,000.00, +50.000VND
+            val signedAmountRegex = """([+-])\s*([0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{1,2})?|[0-9]{4,15})\s*(?:vnd|vnđ|đ|d|dong|đồng|₫)?""".toRegex(RegexOption.IGNORE_CASE)
             val signedMatch = signedAmountRegex.find(fullText)
             if (signedMatch != null) {
                 val sign = signedMatch.groupValues[1]
@@ -451,9 +511,9 @@ class BankNotificationListenerService : NotificationListenerService() {
                 type = if (sign == "+") "IN" else "OUT"
             }
 
-            // Tier 2: Match action-prefixed amount: e.g., "Cộng: 50,000 VND", "Trừ: 100.000đ", "GD: +50.000", "Biến động: +50.000"
+            // Tier 2: Match action-prefixed amount: e.g., "Cộng: 50,000 VND", "Trừ: 100.000đ", "GD: +50.000", "Biến động: +50.000", "Chuyển thành công 50.000 VND"
             if (amount <= 0.0) {
-                val actionRegex = """(?:cộng|cong|trừ|tru|nợ|có|no|co|tăng|tang|giảm|giam|nhận|nhan|thanh toán|thanh toan|chuyển|chuyen|rút|rut|nạp|nap|gd|ps|biến động|bien dong|giao dịch|giao dich)\s*:?\s*([+-]?)\s*([0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{1,2})?|[0-9]{4,15})\s*(?:vnd|vnđ|đ|d|dong|đồng)?""".toRegex(RegexOption.IGNORE_CASE)
+                val actionRegex = """(?:cộng|cong|trừ|tru|nợ|có|no|co|tăng|tang|giảm|giam|nhận|nhan|thanh toán|thanh toan|chuyển|chuyen|rút|rut|nạp|nap|gd|ps|biến động|bien dong|giao dịch|giao dich)(?:[\s\w,.-]{0,25}?):?\s*([+-]?)\s*([0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{1,2})?|[0-9]{4,15})\s*(?:vnd|vnđ|đ|d|dong|đồng|₫)?""".toRegex(RegexOption.IGNORE_CASE)
                 val actionMatch = actionRegex.find(fullText)
                 if (actionMatch != null) {
                     val fullMatchStr = actionMatch.value.lowercase()
@@ -489,9 +549,9 @@ class BankNotificationListenerService : NotificationListenerService() {
                 }
             }
 
-            // Tier 4: Match currency suffixes in context: e.g. "50,000 VND", "100.000 đ", "50000 vnđ"
+            // Tier 4: Match currency suffixes in context: e.g. "50,000 VND", "100.000 đ", "50000 vnđ", "50.000₫"
             if (amount <= 0.0) {
-                val currencyRegex = """([0-9]{1,3}(?:[.,][0-9]{3})+|[0-9]{4,15})\s*(?:vnd|vnđ|đ|dong|đồng)\b""".toRegex(RegexOption.IGNORE_CASE)
+                val currencyRegex = """([0-9]{1,3}(?:[.,][0-9]{3})+|[0-9]{4,15})\s*(?:vnd|vnđ|đ|d|dong|đồng|₫)\b""".toRegex(RegexOption.IGNORE_CASE)
                 val curMatch = currencyRegex.find(fullText)
                 if (curMatch != null) {
                     val amountStr = curMatch.groupValues[1].replace(".", "").replace(",", "")
